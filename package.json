@@ -1,5 +1,5 @@
 {
-  "name": "xmcloud-extension-starter",
+  "name": "workflow-assistant",
   "version": "1.0.0",
   "scripts": {
     "dev": "next dev",

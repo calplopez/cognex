@@ -36,7 +36,7 @@ This project is the starter template for building Sitecore Marketplace extension
 
 ### 4. Pages Context Panel Extension
 
-- **Location:** `app/pages-contextpanel-extension/page.tsx`
+- **Location:** `app/workflow-assistant/page.tsx`
 - **Description:**  
   Displays context information about the current page in the XM Cloud Pages editor.
   - Initializes the Marketplace SDK client.
