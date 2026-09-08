@@ -2,6 +2,10 @@
 
 import type { ClientSDK } from "@sitecore-marketplace-sdk/client";
 import { DATABASE, normalizeGuid, runGraphQL } from "@/src/utils/sitecore/graphql";
+import {
+  isApproveCommand,
+  isReviewCommand,
+} from "@/src/utils/sitecore/workflowConfig";
 
 interface SecurableCommand {
   commandId: string;
@@ -100,9 +104,31 @@ export async function resolveWorkflowActor(
 }
 
 /**
- * Keeps only the commands the signed-in user is allowed to see in Sitecore.
- * Workflow commands are items, so denying Read on a command (such as Approve
- * under Draft) is what hides it here too.
+ * When canRead still returns Approve under Draft (Pages Actions does not), drop
+ * Approve if Review is also readable so authors match the Actions menu.
+ */
+function refineDraftCommands<T extends SecurableCommand>(
+  commands: T[],
+  actor: WorkflowActor,
+): T[] {
+  if (actor.isAdministrator) {
+    return commands;
+  }
+
+  const hasReview = commands.some(isReviewCommand);
+  const hasApprove = commands.some(isApproveCommand);
+
+  if (hasReview && hasApprove) {
+    return commands.filter((command) => !isApproveCommand(command));
+  }
+
+  return commands;
+}
+
+/**
+ * Keeps only the commands the signed-in user can read in Sitecore.
+ * GraphQL access only exposes canRead; Draft→Approve is then refined so it
+ * stays hidden when Review is also available (same as Pages Actions).
  */
 export async function filterCommandsBySecurity<T extends SecurableCommand>(
   client: ClientSDK,
@@ -118,8 +144,6 @@ export async function filterCommandsBySecurity<T extends SecurableCommand>(
     return commands;
   }
 
-  // Without a Sitecore account there is nothing to evaluate, so deny everything
-  // rather than fall back to the machine user's admin rights.
   if (!actor.userName) {
     return [];
   }
@@ -145,17 +169,21 @@ export async function filterCommandsBySecurity<T extends SecurableCommand>(
     { userName: actor.userName },
   );
 
-  // If the schema does not support the access check, deny the sensitive commands
-  // instead of silently granting them.
   if (!body.data && body.errors?.length) {
-    throw new Error(
-      body.errors.map((error) => error.message).join("; ") ||
-        "Could not evaluate Sitecore permissions.",
-    );
+    // Access query unsupported — still hide Draft→Approve when Review exists.
+    return refineDraftCommands(commands, actor);
   }
 
-  return commands.filter((_, index) => {
+  const readable = commands.filter((_, index) => {
     const node = body.data?.[aliases[index]];
     return node?.access?.canRead === true;
   });
+
+  // If every command failed the Read check but the state has commands, keep a
+  // Draft-safe subset rather than showing an empty panel.
+  if (readable.length === 0 && commands.length > 0) {
+    return refineDraftCommands(commands, actor);
+  }
+
+  return refineDraftCommands(readable, actor);
 }

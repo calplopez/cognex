@@ -11,6 +11,7 @@ import {
   filterCommandsBySecurity,
   type WorkflowActor,
 } from "@/src/utils/sitecore/permissions";
+import { workflowConfig } from "@/src/utils/sitecore/workflowConfig";
 
 /**
  * A single language version can need several transitions to reach the final state
@@ -19,23 +20,10 @@ import {
 const MAX_TRANSITIONS = 6;
 
 /**
- * Commands are matched by display name, in this order, until one succeeds.
- * Administrators prefer the direct Approve shortcut when Sitecore grants it.
- */
-const PREFERRED_COMMANDS = ["review", "submit", "approve"];
-const ADMIN_PREFERRED_COMMANDS = ["approve", "review", "submit"];
-
-/** Commands that must never be executed automatically. */
-const BLOCKED_COMMANDS = ["reject", "__"];
-
-/**
  * Instances expose the "is this the last state" flag under different names, so the
  * first one the schema accepts is detected once and reused.
  */
 const FINAL_FIELD_CANDIDATES = ["final", "finalState", "isFinal"];
-
-/** Used only when the schema exposes no final-state flag at all. */
-const FINAL_STATE_NAMES = ["approved"];
 
 export interface WorkflowCommand {
   commandId: string;
@@ -200,7 +188,7 @@ export async function readWorkflowByLanguage(
     const stateName = state?.displayName;
     const isFinal = stateFinalField
       ? state?.[stateFinalField] === true
-      : FINAL_STATE_NAMES.includes((stateName ?? "").trim().toLowerCase());
+      : workflowConfig.finalStateNames.includes((stateName ?? "").trim().toLowerCase());
 
     return {
       language,
@@ -259,7 +247,7 @@ export async function getCommandsByLanguage(
   client: ClientSDK,
   sitecoreContextId: string,
   languages: LanguageWorkflow[],
-  actor: WorkflowActor
+  actor: WorkflowActor,
 ): Promise<Record<string, WorkflowCommand[]>> {
   const entries = await Promise.all(
     languages.map(async (language) => {
@@ -352,10 +340,12 @@ function orderCommands(
 ): WorkflowCommand[] {
   const allowed = commands.filter((command) => {
     const name = command.displayName.trim().toLowerCase();
-    return !BLOCKED_COMMANDS.some((blocked) => name.startsWith(blocked));
+    return !workflowConfig.blockedCommands.some((blocked) => name.startsWith(blocked));
   });
 
-  const preference = preferDirectApprove ? ADMIN_PREFERRED_COMMANDS : PREFERRED_COMMANDS;
+  const preference = preferDirectApprove
+    ? workflowConfig.adminPreferredCommands
+    : workflowConfig.preferredCommands;
   const ordered: WorkflowCommand[] = [];
   const add = (command: WorkflowCommand) => {
     if (!ordered.includes(command)) {
@@ -440,7 +430,7 @@ export async function approveLanguage(
   itemId: string,
   info: LanguageWorkflow,
   comments: string,
-  actor: WorkflowActor
+  actor: WorkflowActor,
 ): Promise<ApproveResult> {
   const steps: string[] = [];
 

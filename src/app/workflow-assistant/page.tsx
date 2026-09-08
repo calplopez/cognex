@@ -22,8 +22,12 @@ import {
   type LanguageWorkflow,
   type WorkflowCommand,
 } from "@/src/utils/sitecore/workflow";
+import {
+  isApproveCommand,
+  workflowConfig,
+} from "@/src/utils/sitecore/workflowConfig";
 
-const DEFAULT_COMMENTS = "Approved";
+const DEFAULT_COMMENTS = workflowConfig.defaultComment;
 
 const statusColors: Record<ApproveResult["status"], string> = {
   approved: "#1a7f37",
@@ -132,10 +136,14 @@ function PagesContextPanel() {
 
   const versions = languages.filter((language) => language.hasVersion);
   const pending = versions.filter((language) => !language.isFinal);
+  const approvable = pending.filter((language) =>
+    (commands[language.language] ?? []).some(isApproveCommand),
+  );
   const canAct = Boolean(actor && canEvaluateSecurity(actor));
+  const canApprove = canAct && approvable.length > 0;
 
   const approveAll = async () => {
-    if (!client || !sitecoreContextId || !pageId) {
+    if (!client || !sitecoreContextId || !pageId || !canApprove) {
       return;
     }
 
@@ -145,7 +153,7 @@ function PagesContextPanel() {
 
     const collected: ApproveResult[] = [];
     const workflowActor = actor ?? (await resolveWorkflowActor(client, sitecoreContextId));
-    for (const language of versions) {
+    for (const language of approvable) {
       try {
         collected.push(
           await approveLanguage(
@@ -244,19 +252,19 @@ function PagesContextPanel() {
         <button
           style={{
             ...styles.button,
-            ...(isApproving || pending.length === 0 || !canAct
-              ? styles.buttonDisabled
-              : {}),
+            ...(isApproving || !canApprove ? styles.buttonDisabled : {}),
           }}
           onClick={approveAll}
           title={
-            canAct
-              ? "Runs only the commands your Sitecore permissions allow"
-              : "Your Sitecore permissions could not be verified"
+            canApprove
+              ? "Runs Approve on every language version that allows it"
+              : "No language versions have an Approve command you can run"
           }
-          disabled={isApproving || isReading || pending.length === 0 || !canAct}
+          disabled={isApproving || isReading || !canApprove}
         >
-          {isApproving ? "Approving…" : `Approve ${pending.length} version(s)`}
+          {isApproving
+            ? "Approving…"
+            : `Approve ${approvable.length} version(s)`}
         </button>
         <button
           style={styles.secondaryButton}
