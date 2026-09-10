@@ -1,0 +1,165 @@
+.panel {
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  color: #1f2328;
+  padding: 16px;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.subtitle {
+  margin: 0 0 16px;
+  color: #57606a;
+}
+
+.sectionTitle {
+  margin: 20px 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  color: #57606a;
+}
+
+.label {
+  display: block;
+  margin-bottom: 12px;
+  color: #57606a;
+}
+
+.input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.button {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: #5548d9;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.button:disabled {
+  background: #c8c6e8;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  padding: 8px 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.commands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.commandButton {
+  padding: 3px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 999px;
+  background: #f6f8fa;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.commandButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.listItem {
+  padding: 10px 0;
+  border-top: 1px solid #eaeef2;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.languageLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.selectAll {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  color: #57606a;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.muted {
+  color: #57606a;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.error {
+  background: #fff1f0;
+  border: 1px solid #ffcecb;
+  border-radius: 6px;
+  padding: 8px;
+  color: #b42318;
+}
+
+.stateFinal {
+  color: #1a7f37;
+}
+
+.statePending {
+  color: #9a6700;
+}
+
+.statusApproved {
+  color: #1a7f37;
+}
+
+.statusAlreadyApproved,
+.statusSkipped {
+  color: #57606a;
+}
+
+.statusFailed {
+  color: #b42318;
+}

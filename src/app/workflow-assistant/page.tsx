@@ -26,14 +26,49 @@ import {
   isApproveCommand,
   workflowConfig,
 } from "@/src/utils/sitecore/workflowConfig";
+import styles from "./page.module.css";
 
 const DEFAULT_COMMENTS = workflowConfig.defaultComment;
 
-const statusColors: Record<ApproveResult["status"], string> = {
-  approved: "#1a7f37",
-  "already-approved": "#57606a",
-  skipped: "#57606a",
-  failed: "#b42318",
+const COPY = {
+  title: "Workflow Assistant",
+  commentLabel: "Workflow comment",
+  refresh: "Refresh",
+  sectionLanguageVersions: "Language versions",
+  loadingPageContext: "Loading page context…",
+  readingWorkflowStates: "Reading workflow states…",
+  approving: "Approving…",
+  running: "Running…",
+  noWorkflow: "No workflow",
+  noSitecoreContextId:
+    "No Sitecore context ID found. Enable XM Cloud API access for this app in Developer Studio, then reinstall it.",
+  noLanguageVersions: "This page has no language versions in workflow.",
+  noCommandsAvailable: "No commands available from this state.",
+  couldNotReadWorkflowStates: "Could not read the workflow states.",
+  unexpectedError: "Unexpected error.",
+  alreadyInFinalState: "Already in the final state",
+  selectAll: "Select all",
+  selectLanguage: (language: string) => `Select ${language} for approval`,
+  approveEnabledTitle: "Runs Approve on the selected language versions",
+  approveDisabledTitle:
+    "Select at least one language version with an Approve command",
+  connectError: (message: string) =>
+    `Could not connect to Sitecore: ${message}`,
+  pageSubtitle: (name?: string, language?: string) =>
+    `${name ?? ""} · current language ${language ?? ""}`.trim(),
+  approveVersions: (count: number) => `Approve ${count} version(s)`,
+  versionLabel: (version: number) => `version ${version}`,
+  runCommandTitle: (displayName: string, language: string) =>
+    `Run "${displayName}" on ${language}`,
+  ranSteps: (steps: string[]) => `Ran: ${steps.join(" → ")}`,
+  failed: (error?: string) => `Failed: ${error}`,
+} as const;
+
+const statusClassName: Record<ApproveResult["status"], string> = {
+  approved: styles.statusApproved,
+  "already-approved": styles.statusAlreadyApproved,
+  skipped: styles.statusSkipped,
+  failed: styles.statusFailed,
 };
 
 function PagesContextPanel() {
@@ -51,6 +86,9 @@ function PagesContextPanel() {
   const [runningCommand, setRunningCommand] = useState<string>();
   const [panelError, setPanelError] = useState<string>();
   const [actor, setActor] = useState<WorkflowActor>();
+  const [selectedLanguages, setSelectedLanguages] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const pageId = pagesContext?.pageInfo?.id;
   const sitecoreContextId = useMemo(
@@ -91,7 +129,10 @@ function PagesContextPanel() {
     setPanelError(undefined);
 
     try {
-      const workflowActor = await resolveWorkflowActor(client, sitecoreContextId);
+      const workflowActor = await resolveWorkflowActor(
+        client,
+        sitecoreContextId,
+      );
       setActor(workflowActor);
 
       const environmentLanguages = await listEnvironmentLanguages(
@@ -114,13 +155,16 @@ function PagesContextPanel() {
       );
       setLanguages(states);
       setCommands(
-        await getCommandsByLanguage(client, sitecoreContextId, states, workflowActor),
+        await getCommandsByLanguage(
+          client,
+          sitecoreContextId,
+          states,
+          workflowActor,
+        ),
       );
     } catch (err) {
       setPanelError(
-        err instanceof Error
-          ? err.message
-          : "Could not read the workflow states.",
+        err instanceof Error ? err.message : COPY.couldNotReadWorkflowStates,
       );
       setLanguages([]);
       setCommands({});
@@ -139,10 +183,45 @@ function PagesContextPanel() {
   const approvable = pending.filter((language) =>
     (commands[language.language] ?? []).some(isApproveCommand),
   );
-  const canAct = Boolean(actor && canEvaluateSecurity(actor));
-  const canApprove = canAct && approvable.length > 0;
+  const approvableKeys = approvable.map((language) => language.language).join(",");
 
-  const approveAll = async () => {
+  useEffect(() => {
+    setSelectedLanguages(
+      new Set(approvableKeys.length > 0 ? approvableKeys.split(",") : []),
+    );
+  }, [approvableKeys]);
+
+  const selectedApprovable = approvable.filter((language) =>
+    selectedLanguages.has(language.language),
+  );
+  const allApprovableSelected =
+    approvable.length > 0 && selectedApprovable.length === approvable.length;
+  const someApprovableSelected =
+    selectedApprovable.length > 0 && !allApprovableSelected;
+  const canAct = Boolean(actor && canEvaluateSecurity(actor));
+  const canApprove = canAct && selectedApprovable.length > 0;
+
+  const toggleLanguage = (language: string, checked: boolean) => {
+    setSelectedLanguages((previous) => {
+      const next = new Set(previous);
+      if (checked) {
+        next.add(language);
+      } else {
+        next.delete(language);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (checked: boolean) => {
+    setSelectedLanguages(
+      checked
+        ? new Set(approvable.map((language) => language.language))
+        : new Set(),
+    );
+  };
+
+  const approveSelected = async () => {
     if (!client || !sitecoreContextId || !pageId || !canApprove) {
       return;
     }
@@ -152,8 +231,9 @@ function PagesContextPanel() {
     setResults([]);
 
     const collected: ApproveResult[] = [];
-    const workflowActor = actor ?? (await resolveWorkflowActor(client, sitecoreContextId));
-    for (const language of approvable) {
+    const workflowActor =
+      actor ?? (await resolveWorkflowActor(client, sitecoreContextId));
+    for (const language of selectedApprovable) {
       try {
         collected.push(
           await approveLanguage(
@@ -170,7 +250,7 @@ function PagesContextPanel() {
           language: language.language,
           status: "failed",
           steps: [],
-          error: err instanceof Error ? err.message : "Unexpected error.",
+          error: err instanceof Error ? err.message : COPY.unexpectedError,
         });
       }
       setResults([...collected]);
@@ -213,95 +293,123 @@ function PagesContextPanel() {
 
   if (error) {
     return (
-      <div style={styles.panel}>
-        Could not connect to Sitecore: {error.message}
-      </div>
+      <div className={styles.panel}>{COPY.connectError(error.message)}</div>
     );
   }
 
   if (!isInitialized || !pagesContext) {
-    return <div style={styles.panel}>Loading page context…</div>;
+    return <div className={styles.panel}>{COPY.loadingPageContext}</div>;
   }
 
   return (
-    <div style={styles.panel}>
-      <h2 style={styles.title}>Workflow Assistant</h2>
-      <p style={styles.subtitle}>
-        {pagesContext.pageInfo?.name} · current language{" "}
-        {pagesContext.pageInfo?.language}
+    <div className={styles.panel}>
+      <h2 className={styles.title}>{COPY.title}</h2>
+      <p className={styles.subtitle}>
+        {COPY.pageSubtitle(
+          pagesContext.pageInfo?.name,
+          pagesContext.pageInfo?.language,
+        )}
       </p>
       {!sitecoreContextId && (
-        <p style={styles.error}>
-          No Sitecore context ID found. Enable XM Cloud API access for this app
-          in Developer Studio, then reinstall it.
-        </p>
+        <p className={styles.error}>{COPY.noSitecoreContextId}</p>
       )}
 
-      {panelError && <p style={styles.error}>{panelError}</p>}
+      {panelError && <p className={styles.error}>{panelError}</p>}
 
-      <label style={styles.label}>
-        Workflow comment
+      <label className={styles.label}>
+        {COPY.commentLabel}
         <input
-          style={styles.input}
+          className={styles.input}
           value={comments}
           onChange={(event) => setComments(event.target.value)}
         />
       </label>
 
-      <div style={styles.actions}>
+      <div className={styles.actions}>
         <button
-          style={{
-            ...styles.button,
-            ...(isApproving || !canApprove ? styles.buttonDisabled : {}),
-          }}
-          onClick={approveAll}
+          className={styles.button}
+          onClick={approveSelected}
           title={
-            canApprove
-              ? "Runs Approve on every language version that allows it"
-              : "No language versions have an Approve command you can run"
+            canApprove ? COPY.approveEnabledTitle : COPY.approveDisabledTitle
           }
           disabled={isApproving || isReading || !canApprove}
         >
           {isApproving
-            ? "Approving…"
-            : `Approve ${approvable.length} version(s)`}
+            ? COPY.approving
+            : COPY.approveVersions(selectedApprovable.length)}
         </button>
         <button
-          style={styles.secondaryButton}
+          className={styles.secondaryButton}
           onClick={loadWorkflowStates}
           disabled={isReading}
         >
-          Refresh
+          {COPY.refresh}
         </button>
       </div>
 
-      <h3 style={styles.sectionTitle}>Language versions</h3>
-      {isReading && <p style={styles.muted}>Reading workflow states…</p>}
+      <h3 className={styles.sectionTitle}>{COPY.sectionLanguageVersions}</h3>
+      {isReading && (
+        <p className={styles.muted}>{COPY.readingWorkflowStates}</p>
+      )}
       {!isReading && versions.length === 0 && (
-        <p style={styles.muted}>
-          This page has no language versions in workflow.
-        </p>
+        <p className={styles.muted}>{COPY.noLanguageVersions}</p>
+      )}
+      {approvable.length > 0 && (
+        <label className={styles.selectAll}>
+          <input
+            type="checkbox"
+            checked={allApprovableSelected}
+            ref={(element) => {
+              if (element) {
+                element.indeterminate = someApprovableSelected;
+              }
+            }}
+            onChange={(event) => toggleSelectAll(event.target.checked)}
+            disabled={isApproving || isReading}
+          />
+          {COPY.selectAll}
+        </label>
       )}
 
-      <ul style={styles.list}>
+      <ul className={styles.list}>
         {versions.map((language) => {
           const result = results.find(
             (entry) => entry.language === language.language,
           );
           const available = commands[language.language] ?? [];
+          const isApprovable = approvable.some(
+            (entry) => entry.language === language.language,
+          );
           return (
-            <li key={language.language} style={styles.listItem}>
-              <div style={styles.row}>
-                <strong>{language.language}</strong>
+            <li key={language.language} className={styles.listItem}>
+              <div className={styles.row}>
+                <label className={styles.languageLabel}>
+                  {isApprovable && (
+                    <input
+                      type="checkbox"
+                      checked={selectedLanguages.has(language.language)}
+                      onChange={(event) =>
+                        toggleLanguage(language.language, event.target.checked)
+                      }
+                      disabled={isApproving || isReading}
+                      aria-label={COPY.selectLanguage(language.language)}
+                    />
+                  )}
+                  <strong>{language.language}</strong>
+                </label>
                 <span
-                  style={{ color: language.isFinal ? "#1a7f37" : "#9a6700" }}
+                  className={
+                    language.isFinal ? styles.stateFinal : styles.statePending
+                  }
                 >
-                  {language.stateName ?? "No workflow"}
+                  {language.stateName ?? COPY.noWorkflow}
                 </span>
               </div>
-              <div style={styles.muted}>version {language.version}</div>
+              <div className={styles.muted}>
+                {COPY.versionLabel(language.version ?? 0)}
+              </div>
               {available.length > 0 ? (
-                <div style={styles.commands}>
+                <div className={styles.commands}>
                   {available.map((command) => {
                     const isRunning =
                       runningCommand ===
@@ -309,38 +417,35 @@ function PagesContextPanel() {
                     return (
                       <button
                         key={command.commandId}
-                        style={styles.commandButton}
-                        title={`Run "${command.displayName}" on ${language.language}`}
+                        className={styles.commandButton}
+                        title={COPY.runCommandTitle(
+                          command.displayName,
+                          language.language,
+                        )}
                         onClick={() => executeSingleCommand(language, command)}
                         disabled={
                           isApproving || isReading || Boolean(runningCommand)
                         }
                       >
-                        {isRunning ? "Running…" : command.displayName}
+                        {isRunning ? COPY.running : command.displayName}
                       </button>
                     );
                   })}
                 </div>
               ) : (
                 !language.isFinal && (
-                  <div style={styles.muted}>
-                    No commands available from this state.
-                  </div>
+                  <div className={styles.muted}>{COPY.noCommandsAvailable}</div>
                 )
               )}
               {result && (
                 <div
-                  style={{
-                    ...styles.muted,
-                    color: statusColors[result.status],
-                  }}
+                  className={`${styles.muted} ${statusClassName[result.status]}`}
                 >
-                  {result.status === "approved" &&
-                    `Ran: ${result.steps.join(" → ")}`}
+                  {result.status === "approved" && COPY.ranSteps(result.steps)}
                   {result.status === "already-approved" &&
-                    "Already in the final state"}
+                    COPY.alreadyInFinalState}
                   {result.status === "skipped" && result.error}
-                  {result.status === "failed" && `Failed: ${result.error}`}
+                  {result.status === "failed" && COPY.failed(result.error)}
                 </div>
               )}
             </li>
@@ -350,72 +455,5 @@ function PagesContextPanel() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  panel: {
-    fontFamily: "system-ui, sans-serif",
-    fontSize: "14px",
-    color: "#1f2328",
-    padding: "16px",
-  },
-  title: { margin: "0 0 4px", fontSize: "16px" },
-  subtitle: { margin: "0 0 16px", color: "#57606a" },
-  sectionTitle: {
-    margin: "20px 0 8px",
-    fontSize: "13px",
-    textTransform: "uppercase",
-    color: "#57606a",
-  },
-  label: { display: "block", marginBottom: "12px", color: "#57606a" },
-  input: {
-    display: "block",
-    width: "100%",
-    marginTop: "4px",
-    padding: "6px 8px",
-    border: "1px solid #d0d7de",
-    borderRadius: "6px",
-    fontSize: "14px",
-  },
-  actions: { display: "flex", gap: "8px" },
-  button: {
-    flex: 1,
-    padding: "8px 12px",
-    border: "none",
-    borderRadius: "6px",
-    background: "#5548d9",
-    color: "#fff",
-    fontSize: "14px",
-    cursor: "pointer",
-  },
-  buttonDisabled: { background: "#c8c6e8", cursor: "not-allowed" },
-  secondaryButton: {
-    padding: "8px 12px",
-    border: "1px solid #d0d7de",
-    borderRadius: "6px",
-    background: "#fff",
-    fontSize: "14px",
-    cursor: "pointer",
-  },
-  commands: { display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" },
-  commandButton: {
-    padding: "3px 10px",
-    border: "1px solid #d0d7de",
-    borderRadius: "999px",
-    background: "#f6f8fa",
-    fontSize: "12px",
-    cursor: "pointer",
-  },
-  list: { listStyle: "none", margin: 0, padding: 0 },
-  listItem: { padding: "10px 0", borderTop: "1px solid #eaeef2" },
-  row: { display: "flex", justifyContent: "space-between", gap: "8px" },
-  muted: { color: "#57606a", fontSize: "12px", marginTop: "2px" },
-  error: {
-    background: "#fff1f0",
-    border: "1px solid #ffcecb",
-    borderRadius: "6px",
-    padding: "8px",
-    color: "#b42318",
-  },
-};
 
 export default PagesContextPanel;
